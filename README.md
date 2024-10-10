@@ -8,18 +8,20 @@
 2. Установить [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). Обязательно выполнить все шаги по подготовке и пост-установке, [прописать config.json](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#configuring-docker) для докера с рантаймом нвидии. 
 
 3.  Подготовить докер образ
-    1. Сбилдить образ самому: 
+    - Сбилдить образ самому: 
         ``` 
         docker build testovoe-cuda:latest .
         ```
-    2. Или воспользоваться готовым.
-        ``` 
-        docker pull swedenmoose/testovoe-cuda:latest
-        ```
-        LightWeight CPU версия:
-        ``` 
-        docker pull swedenmoose/testovoe-cpu:latest
-        ```
+    - Или воспользоваться готовым.
+      
+        - Тяжелая (8GB) CUDA версия:
+            ``` 
+            docker pull swedenmoose/testovoe-cuda:latest
+            ```
+        - Lightweight (485MB) CPU версия:
+            ``` 
+            docker pull swedenmoose/testovoe-cpu:latest
+            ```
 
 4. Запустить образ
     ```
