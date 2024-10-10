@@ -1,0 +1,64 @@
+# Предисловие
+# Изначально мною предполагалось минимальное вмешательство в код инференса модели, а значит запуск на TensorRT и последней версией ORT(1.19.2) и с CUDA 12.6 + cuDNN 9 в среде контейнера. В ходе "ресерча",
+# обнаружилось, что официальный GPU пакет не был сбилжен под cuDNN 9.x, поэтому появилась задача сбилдить всё самому.
+
+# https://onnxruntime.ai/docs/install/#cuda-and-cudnn
+# https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#cuda-12x
+
+#ARG TRT_CONTAINER_VERSION=22.04    
+# FROM nvcr.io/nvidia/tensorrt:${TRT_CONTAINER_VERSION}-py3:latest 
+
+# Можно подумать что это крутецкий лайвсейвер, но на самом деле этот образ не обновляли уже два года... Tensorrt 8.2.4... Актуальная 10.4...
+# Забегая наперед, в репозитории Onxxruntime тоже пишут о устаревшем докерфайле для билда с tensorrt.
+# https://github.com/microsoft/onnxruntime/issues/20840
+# https://github.com/microsoft/onnxruntime/issues/20458
+# https://github.com/microsoft/onnxruntime/issues/19978
+ 
+
+FROM ubuntu:22.04
+# Ну ладно, раз хороших образов нет, то соберем свой
+# А раз готовый GPU пакет на ORT v.1.19.2 не работает с cudnn версии 9, критически необходимой для работы, то соберем свою либу!
+
+
+RUN apt-get update && apt-get -y install curl build-essential git # + gdb для дебага
+
+
+WORKDIR /usr/src/tensorrt-pkg
+
+RUN curl -O -L https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb && dpkg -i cuda-keyring_1.1-1_all.deb && apt-get update \ 
+        && curl -O -L https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.4.0/tars/TensorRT-10.4.0.26.Linux.x86_64-gnu.cuda-12.6.tar.gz \
+	&& tar -zxf TensorRT-10.4.0.26.Linux.x86_64-gnu.cuda-12.6.tar.gz \
+	&& rm TensorRT-10.4.0.26.Linux.x86_64-gnu.cuda-12.6.tar.gz \
+	&& mv -v TensorRT-10.4.0.26/targets/x86_64-linux-gnu/lib/* /usr/lib/x86_64-linux-gnu/ \
+	&& mv -v TensorRT-10.4.0.26/include/* /usr/lib/x86_64-linux-gnu/ \
+	&& apt-get -y install cuda-toolkit-12-6 cudnn-cuda-12
+
+ENV PATH=/usr/local/cuda-12.6/bin${PATH:+:${PATH}}
+ENV PATH=/usr/local/cuda/bin${PATH:+:${PATH}}
+ENV LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+ARG ONNXRUNTIME_REPO=https://github.com/Microsoft/onnxruntime
+ARG ONNXRUNTIME_BRANCH=v1.19.2
+ARG CMAKE_CUDA_ARCHITECTURES=37;50;52;60;61;70;75;80
+
+WORKDIR /usr/src/onnxruntime-squeezenet-test
+
+COPY . .
+
+RUN git clone --single-branch --branch ${ONNXRUNTIME_BRANCH} --recursive ${ONNXRUNTIME_REPO} onnxruntime
+
+# Сбилдим свою либу
+RUN /bin/sh onnxruntime/dockerfiles/scripts/install_common_deps.sh &&\
+    cp cmake-3.27.3-linux-x86_64/bin/* /usr/bin/ && cp -r cmake-3.27.3-linux-x86_64/share/* /usr/share/ &&\
+    trt_version=10.4 &&\
+    /bin/sh onnxruntime/dockerfiles/scripts/checkout_submodules.sh ${trt_version} &&\
+    cd onnxruntime &&\
+    /bin/sh build.sh --allow_running_as_root --build_shared_lib --parallel 8 --use_cuda --cuda_home /usr/local/cuda --cudnn_home /usr/lib/x86_64-linux-gnu/ --use_tensorrt --tensorrt_home /usr/lib/x86_64-linux- gnu/ --config Release --skip_tests --skip_submodule_sync --cmake_extra_defines  '"CMAKE_CUDA_ARCHITECTURES='${CMAKE_CUDA_ARCHITECTURES}'"'
+
+# Спустя час билда я не обнаружил ничего нового, но зато есть крутые файлы для дебага. 
+# Итог: устаревший метод сборки либы для tensorrt дал о себе знать. Имеет смысл пользоваться CUDA-провайдером и на предустановленном образе.
+
+ENTRYPOINT ./run_capi_application.sh
+
+
