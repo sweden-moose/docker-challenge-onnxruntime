@@ -10,7 +10,7 @@
 3.  Подготовить докер образ
     - Сбилдить образ самому: 
         ``` 
-        docker build testovoe-cuda:latest .
+        docker build -t testovoe-cuda:latest .
         ```
     - Или воспользоваться готовым.
       
